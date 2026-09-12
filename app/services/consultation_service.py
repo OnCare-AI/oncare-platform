@@ -54,10 +54,22 @@ def continue_consultation(
 
     current_field = missing_fields[0]
 
-    updated_situation = update_user_situation(
+    updated_situation, answer_relevant = update_user_situation(
         situation=situation,
         field_name=current_field,
         user_answer=user_answer,
     )
+
+    if not answer_relevant:
+        return ConsultationResult(
+            situation=situation,
+            missing_fields=missing_fields,
+            current_field=current_field,
+            next_question=(
+                "방금 답변에서는 현재 질문에 필요한 정보를 확인하지 못했어요. "
+                + get_next_question(missing_fields)
+            ),
+            ready_for_recommendation=False,
+        )
 
     return _build_result(updated_situation)
