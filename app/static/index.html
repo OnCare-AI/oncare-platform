@@ -1,157 +1,241 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OnCare AI 상담</title>
 
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 20px;
-            background: #f5f7fa;
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 40px auto;
+        padding: 20px;
+        background: #f5f7fa;
+      }
+
+      h1 {
+        text-align: center;
+      }
+
+      #chat {
+        background: white;
+        min-height: 400px;
+        padding: 20px;
+        border-radius: 12px;
+        margin-bottom: 15px;
+      }
+
+      .message {
+        margin: 12px 0;
+        padding: 12px;
+        border-radius: 10px;
+      }
+
+      .user {
+        background: #e7f1ff;
+        text-align: right;
+      }
+
+      .ai {
+        background: #eeeeee;
+      }
+
+      .input-area {
+        display: flex;
+        gap: 10px;
+      }
+
+      #messageInput {
+        flex: 1;
+        padding: 12px;
+        font-size: 16px;
+      }
+
+      button {
+        padding: 12px 20px;
+        cursor: pointer;
+      }
+
+      .loading {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .loading-dot {
+        width: 7px;
+        height: 7px;
+        background: #777;
+        border-radius: 50%;
+        animation: blink 1.4s infinite both;
+      }
+
+      .loading-dot:nth-child(3) {
+        animation-delay: 0.2s;
+      }
+
+      .loading-dot:nth-child(4) {
+        animation-delay: 0.4s;
+      }
+
+      @keyframes blink {
+        0%,
+        80%,
+        100% {
+          opacity: 0.2;
         }
 
-        h1 {
-            text-align: center;
+        40% {
+          opacity: 1;
         }
+      }
 
-        #chat {
-            background: white;
-            min-height: 400px;
-            padding: 20px;
-            border-radius: 12px;
-            margin-bottom: 15px;
-        }
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
 
-        .message {
-            margin: 12px 0;
-            padding: 12px;
-            border-radius: 10px;
-        }
-
-        .user {
-            background: #e7f1ff;
-            text-align: right;
-        }
-
-        .ai {
-            background: #eeeeee;
-        }
-
-        .input-area {
-            display: flex;
-            gap: 10px;
-        }
-
-        #messageInput {
-            flex: 1;
-            padding: 12px;
-            font-size: 16px;
-        }
-
-        button {
-            padding: 12px 20px;
-            cursor: pointer;
-        }
+      #messageInput:disabled {
+        background: #f0f0f0;
+      }
     </style>
-</head>
+  </head>
 
-<body>
+  <body>
+    <h1>OnCare</h1>
+    <p style="text-align: center">AI 기반 성남형 복지연계 상담</p>
 
-<h1>OnCare</h1>
-<p style="text-align:center;">
-    AI 기반 성남형 복지연계 상담
-</p>
-
-<div id="chat">
-    <div class="message ai">
+    <div id="chat">
+      <div class="message ai">
         안녕하세요. 현재 돌봄이 필요한 상황을 편하게 말씀해주세요.
+      </div>
     </div>
-</div>
 
-<div class="input-area">
-    <input
-        id="messageInput"
-        type="text"
-        placeholder="상황을 입력해주세요."
-    >
-    <button onclick="sendMessage()">전송</button>
-</div>
+    <div class="input-area">
+      <input id="messageInput" type="text" placeholder="상황을 입력해주세요." />
+      <button id="sendButton" onclick="sendMessage()">전송</button>
+    </div>
 
-<script>
-    let currentSituation = null;
-    let consultationFinished = false;
+    <script>
+      let currentSituation = null;
+      let consultationFinished = false;
+      let isLoading = false;
 
-    async function sendMessage() {
+      function setLoadingState(loading) {
+        const input = document.getElementById("messageInput");
+        const button = document.getElementById("sendButton");
+
+        isLoading = loading;
+
+        input.disabled = loading;
+        button.disabled = loading;
+
+        if (loading) {
+          button.textContent = "처리 중...";
+        } else {
+          button.textContent = "전송";
+          input.focus();
+        }
+      }
+
+      function showLoading() {
+        const chat = document.getElementById("chat");
+
+        const div = document.createElement("div");
+        div.className = "message ai loading";
+        div.id = "loadingMessage";
+
+        div.innerHTML = `
+    <span>OnCare가 답변을 준비하고 있어요</span>
+    <span class="loading-dot"></span>
+    <span class="loading-dot"></span>
+    <span class="loading-dot"></span>
+  `;
+
+        chat.appendChild(div);
+        chat.scrollTop = chat.scrollHeight;
+      }
+
+      function hideLoading() {
+        const loading = document.getElementById("loadingMessage");
+
+        if (loading) {
+          loading.remove();
+        }
+      }
+
+      async function sendMessage() {
         const input = document.getElementById("messageInput");
         const message = input.value.trim();
 
         if (!message || consultationFinished) {
-            return;
+          return;
         }
 
         addMessage(message, "user");
         input.value = "";
 
+        setLoadingState(true);
+        showLoading();
+
         try {
-            let response;
+          let response;
 
-            if (currentSituation === null) {
-                response = await fetch("/consultation/start", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        message: message
-                    })
-                });
-            } else {
-                response = await fetch("/consultation/continue", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        situation: currentSituation,
-                        message: message
-                    })
-                });
-            }
+          if (currentSituation === null) {
+            response = await fetch("/consultation/start", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                message: message,
+              }),
+            });
+          } else {
+            response = await fetch("/consultation/continue", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                situation: currentSituation,
+                message: message,
+              }),
+            });
+          }
 
-            if (!response.ok) {
-                throw new Error("상담 요청에 실패했습니다.");
-            }
+          if (!response.ok) {
+            throw new Error("상담 요청에 실패했습니다.");
+          }
 
-            const data = await response.json();
+          const data = await response.json();
+          hideLoading();
+          setLoadingState(false);
 
-            currentSituation = data.situation;
+          currentSituation = data.situation;
 
-            if (data.ready_for_recommendation) {
-                addMessage(
-                    "필요한 정보 확인이 완료되었습니다. 복지서비스 추천을 진행할 수 있습니다.",
-                    "ai"
-                );
-
-                consultationFinished = true;
-            } else {
-                addMessage(data.next_question, "ai");
-            }
-
-        } catch (error) {
-            console.error(error);
-
+          if (data.ready_for_recommendation) {
             addMessage(
-                "상담 처리 중 오류가 발생했습니다.",
-                "ai"
+              "필요한 정보 확인이 완료되었습니다. 복지서비스 추천을 진행할 수 있습니다.",
+              "ai",
             );
-        }
-    }
 
-    function addMessage(text, type) {
+            consultationFinished = true;
+          } else {
+            addMessage(data.next_question, "ai");
+          }
+        } catch (error) {
+          hideLoading();
+          setLoadingState(false);
+
+          console.error(error);
+
+          addMessage("상담 처리 중 오류가 발생했습니다.", "ai");
+        }
+      }
+
+      function addMessage(text, type) {
         const chat = document.getElementById("chat");
 
         const div = document.createElement("div");
@@ -160,16 +244,15 @@
 
         chat.appendChild(div);
         chat.scrollTop = chat.scrollHeight;
-    }
+      }
 
-    document
+      document
         .getElementById("messageInput")
-        .addEventListener("keydown", function(event) {
-            if (event.key === "Enter") {
-                sendMessage();
-            }
+        .addEventListener("keydown", function (event) {
+          if (event.key === "Enter") {
+            sendMessage();
+          }
         });
-</script>
-
-</body>
+    </script>
+  </body>
 </html>
