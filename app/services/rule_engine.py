@@ -13,7 +13,12 @@ STATUS_OFFICIAL_ASSESSMENT_REQUIRED = "OFFICIAL_ASSESSMENT_REQUIRED"
 
 MIN_AGE = 65
 # R02 판정에 쓰는 welfare_status 키워드
-WELFARE_KEYWORDS = ["기초생활수급자", "차상위", "기초연금수급자", "차상위계층"]
+# 수정 후
+WELFARE_KEYWORDS = [
+    "기초생활수급자", "차상위", "차상위계층",
+    "기초연금수급자", "기초연금",  # "기초연금을 받고 있어요" 같은 자연스러운 표현도 인식하도록 추가
+    "생계급여", "의료급여",  # 다른 자연어 표현 대비 추가
+]
 
 # 모든 서비스의 rag_keywords를 하나로 모아둠 (care_needs가 구체적인지 판단할 때 사용)
 _ALL_SERVICE_KEYWORDS = set()
@@ -22,8 +27,13 @@ for _service in SERVICES:
 
 
 def _care_needs_are_specific(care_needs: list[str]) -> bool:
-    """care_needs 중 하나라도 알려진 서비스 키워드와 일치하면 '구체적'으로 판단."""
-    return any(need in _ALL_SERVICE_KEYWORDS for need in care_needs)
+    """care_needs 문장 안에 알려진 서비스 키워드가 (띄어쓰기 무시하고) 포함되어 있으면 '구체적'으로 판단."""
+    normalized_keywords = [k.replace(" ", "") for k in _ALL_SERVICE_KEYWORDS]
+    return any(
+        keyword in need.replace(" ", "")
+        for need in care_needs
+        for keyword in normalized_keywords
+    )
 
 
 def evaluate(situation: UserSituation) -> dict:
@@ -48,7 +58,7 @@ def evaluate(situation: UserSituation) -> dict:
     # R02: 복지자격 (기초생활수급자/차상위/기초연금수급자 등)
     if situation.welfare_status is None:
         missing_fields.append("welfare_status")
-    elif not any(keyword in situation.welfare_status for keyword in WELFARE_KEYWORDS):
+    elif not any(keyword in situation.welfare_status.replace(" ", "") for keyword in WELFARE_KEYWORDS):
         missing_fields.append("welfare_status")  # 명확히 해당 안 됨으로 단정하지 않고 재확인 요청
 
     # R03: 돌봄 필요 상황
