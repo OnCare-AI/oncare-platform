@@ -8,7 +8,7 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.user_situation import UserSituation
 from app.services.consultation_service import (
@@ -41,6 +41,7 @@ class StartConsultationRequest(BaseModel):
 class ContinueConsultationRequest(BaseModel):
     situation: UserSituation
     message: str
+    unknown_fields: list[str] = Field(default_factory=list)
 
 
 class RecommendationRequest(BaseModel):
@@ -74,9 +75,10 @@ def start(request: StartConsultationRequest):
 )
 def continue_chat(request: ContinueConsultationRequest):
     return continue_consultation(
-        situation=request.situation,
-        user_answer=request.message,
-    )
+    situation=request.situation,
+    user_answer=request.message,
+    unknown_fields=request.unknown_fields,
+)
 
 
 @app.post(
