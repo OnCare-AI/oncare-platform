@@ -41,6 +41,28 @@
         background: #eeeeee;
       }
 
+      .recommendation {
+        background: #eef7ee;
+        border: 1px solid #cde5cd;
+      }
+
+      .recommendation ul {
+        margin: 8px 0;
+        padding-left: 20px;
+      }
+
+      .recommendation .sources {
+        font-size: 12px;
+        color: #666;
+        margin-top: 8px;
+      }
+
+      .recommendation .review-note {
+        font-size: 12px;
+        color: #b45309;
+        margin-top: 4px;
+      }
+
       .input-area {
         display: flex;
         gap: 10px;
@@ -121,6 +143,14 @@
       let currentSituation = null;
       let consultationFinished = false;
       let isLoading = false;
+
+      // 상태값을 사용자가 이해하기 쉬운 한국어 문구로 변환
+      const STATUS_LABELS = {
+        POTENTIAL_MATCH: "추천 가능성 높음",
+        NEEDS_CHECK: "추가 확인 필요",
+        LIKELY_NOT_MATCH: "조건 불일치 가능성 높음",
+        OFFICIAL_ASSESSMENT_REQUIRED: "기관 판단 필요",
+      };
 
       function setLoadingState(loading) {
         const input = document.getElementById("messageInput");
@@ -217,11 +247,12 @@
 
           if (data.ready_for_recommendation) {
             addMessage(
-              "필요한 정보 확인이 완료되었습니다. 복지서비스 추천을 진행할 수 있습니다.",
+              "필요한 정보 확인이 완료되었습니다. 맞춤 복지서비스를 찾아볼게요.",
               "ai",
             );
 
             consultationFinished = true;
+            await fetchRecommendation();
           } else {
             addMessage(data.next_question, "ai");
           }
@@ -233,6 +264,72 @@
 
           addMessage("상담 처리 중 오류가 발생했습니다.", "ai");
         }
+      }
+
+      // 은경님 파트: /recommendations 호출해서 추천 결과 받아오기
+      async function fetchRecommendation() {
+        setLoadingState(true);
+        showLoading();
+
+        try {
+          const response = await fetch("/recommendations", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              situation: currentSituation,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error("추천 요청에 실패했습니다.");
+          }
+
+          const result = await response.json();
+          hideLoading();
+          setLoadingState(false);
+
+          renderRecommendation(result);
+        } catch (error) {
+          hideLoading();
+          setLoadingState(false);
+
+          console.error(error);
+
+          addMessage("추천 처리 중 오류가 발생했습니다.", "ai");
+        }
+      }
+
+      // 추천 결과를 카드 형태로 화면에 그려줌
+      function renderRecommendation(result) {
+        const chat = document.getElementById("chat");
+
+        const div = document.createElement("div");
+        div.className = "message ai recommendation";
+
+        const servicesHtml = result.matched_services.length
+          ? result.matched_services.map((s) => `<li>${s.name}</li>`).join("")
+          : "<li>조건에 맞는 서비스를 아직 특정하지 못했습니다.</li>";
+
+        const sourcesHtml = result.source_ids.length
+          ? `<p class="sources">출처: ${result.source_ids.join(", ")}</p>`
+          : "";
+
+        const reviewNote = result.institution_review_required
+          ? `<p class="review-note">※ 최종 대상 여부는 행정복지센터의 선정조사를 통해 확정됩니다.</p>`
+          : "";
+
+        div.innerHTML = `
+    <p><strong>판정 결과: ${STATUS_LABELS[result.status] || result.status}</strong></p>
+    <p>${result.reason}</p>
+    <ul>${servicesHtml}</ul>
+    ${sourcesHtml}
+    ${reviewNote}
+  `;
+
+        chat.appendChild(div);
+        chat.scrollTop = chat.scrollHeight;
       }
 
       function addMessage(text, type) {
