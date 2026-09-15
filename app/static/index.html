@@ -142,14 +142,25 @@
       #messageInput:disabled {
         background: #f0f0f0;
       }
+
+      #finishButton {
+        background: #e5e7eb;
+        color: #333;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 14px;
+        cursor: pointer;
+      }
+
+      #finishButton:hover {
+        background: #d1d5db;
+      }
     </style>
   </head>
 
   <body>
     <h1>OnCare</h1>
-    <p style="text-align: center">
-      AI 기반 성남형 복지연계 상담
-    </p>
+    <p style="text-align: center">AI 기반 성남형 복지연계 상담</p>
 
     <div id="chat">
       <div class="message ai">
@@ -158,17 +169,12 @@
     </div>
 
     <div class="input-area">
-      <input
-        id="messageInput"
-        type="text"
-        placeholder="상황을 입력해주세요."
-      />
+      <input id="messageInput" type="text" placeholder="상황을 입력해주세요." />
 
-      <button
-        id="sendButton"
-        onclick="sendMessage()"
-      >
-        전송
+      <button id="sendButton" onclick="sendMessage()">전송</button>
+
+      <button id="finishButton" onclick="finishConsultation()">
+        상담 종료
       </button>
     </div>
 
@@ -177,6 +183,15 @@
 
       // "잘 모르겠어요"라고 답한 필드 기억
       let currentUnknownFields = [];
+
+      // 현재 추천 결과 기억
+      let currentRecommendation = null;
+
+      // 판정 이후 추가 상담 모드인지
+      let postRecommendationMode = false;
+
+      // 상담 종료 전까지 대화내용 기억
+      let conversationHistory = [];
 
       // 최종적으로 상담 종료 버튼을 눌렀는지
       let consultationFinished = false;
@@ -193,13 +208,10 @@
         OFFICIAL_ASSESSMENT_REQUIRED: "기관 판단 필요",
       };
 
-
       function setLoadingState(loading) {
-        const input =
-          document.getElementById("messageInput");
+        const input = document.getElementById("messageInput");
 
-        const button =
-          document.getElementById("sendButton");
+        const button = document.getElementById("sendButton");
 
         isLoading = loading;
 
@@ -217,13 +229,10 @@
         }
       }
 
-
       function setInputEnabled(enabled) {
-        const input =
-          document.getElementById("messageInput");
+        const input = document.getElementById("messageInput");
 
-        const button =
-          document.getElementById("sendButton");
+        const button = document.getElementById("sendButton");
 
         input.disabled = !enabled;
         button.disabled = !enabled;
@@ -233,13 +242,10 @@
         }
       }
 
-
       function showLoading() {
-        const chat =
-          document.getElementById("chat");
+        const chat = document.getElementById("chat");
 
-        const div =
-          document.createElement("div");
+        const div = document.createElement("div");
 
         div.className = "message ai loading";
         div.id = "loadingMessage";
@@ -255,23 +261,18 @@
         chat.scrollTop = chat.scrollHeight;
       }
 
-
       function hideLoading() {
-        const loading =
-          document.getElementById("loadingMessage");
+        const loading = document.getElementById("loadingMessage");
 
         if (loading) {
           loading.remove();
         }
       }
 
-
       async function sendMessage() {
-        const input =
-          document.getElementById("messageInput");
+        const input = document.getElementById("messageInput");
 
-        const message =
-          input.value.trim();
+        const message = input.value.trim();
 
         if (
           !message ||
@@ -282,8 +283,10 @@
           return;
         }
 
-        addMessage(message, "user");
+        // 현재 메시지를 넣기 전까지의 대화 기록
+        const previousHistory = [...conversationHistory];
 
+        addMessage(message, "user");
         input.value = "";
 
         setLoadingState(true);
@@ -292,58 +295,75 @@
         try {
           let response;
 
+          // 추천 판정 이후 추가 상담
+          if (postRecommendationMode) {
+            response = await fetch("/consultation/follow-up", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                situation: currentSituation,
+                recommendation: currentRecommendation,
+                message: message,
+                conversation_history: previousHistory,
+              }),
+            });
+
+            if (!response.ok) {
+              throw new Error("후속 상담 요청에 실패했습니다.");
+            }
+
+            const data = await response.json();
+
+            hideLoading();
+            setLoadingState(false);
+
+            addMessage(data.answer, "ai");
+
+            return;
+          }
+
           // 첫 상담
           if (currentSituation === null) {
-            response = await fetch(
-              "/consultation/start",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  message: message,
-                }),
+            response = await fetch("/consultation/start", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
               },
-            );
+              body: JSON.stringify({
+                message: message,
+              }),
+            });
           }
 
           // 추가질문 상담
           else {
-            response = await fetch(
-              "/consultation/continue",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  situation: currentSituation,
-                  message: message,
-                  unknown_fields:
-                    currentUnknownFields,
-                }),
+            response = await fetch("/consultation/continue", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
               },
-            );
+              body: JSON.stringify({
+                situation: currentSituation,
+                message: message,
+                unknown_fields: currentUnknownFields,
+              }),
+            });
           }
 
           if (!response.ok) {
-            throw new Error(
-              "상담 요청에 실패했습니다.",
-            );
+            throw new Error("상담 요청에 실패했습니다.");
           }
 
-          const data =
-            await response.json();
+          const data = await response.json();
 
           hideLoading();
           setLoadingState(false);
 
-          currentSituation =
-            data.situation;
+          currentSituation = data.situation;
 
-          currentUnknownFields =
-            data.unknown_fields || [];
+          currentUnknownFields = data.unknown_fields || [];
 
           // 상담 정보가 충분하면 추천 실행
           if (data.ready_for_recommendation) {
@@ -354,29 +374,18 @@
 
             // 여기서 상담을 종료하지 않는다.
             await fetchRecommendation();
+          } else {
+            addMessage(data.next_question, "ai");
           }
-
-          else {
-            addMessage(
-              data.next_question,
-              "ai",
-            );
-          }
-        }
-
-        catch (error) {
+        } catch (error) {
           hideLoading();
           setLoadingState(false);
 
           console.error(error);
 
-          addMessage(
-            "상담 처리 중 오류가 발생했습니다.",
-            "ai",
-          );
+          addMessage("상담 처리 중 오류가 발생했습니다.", "ai");
         }
       }
-
 
       // B 파트 추천 API 호출
       async function fetchRecommendation() {
@@ -384,28 +393,23 @@
         showLoading();
 
         try {
-          const response = await fetch(
-            "/recommendations",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                situation: currentSituation,
-              }),
+          const response = await fetch("/recommendations", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
             },
-          );
+            body: JSON.stringify({
+              situation: currentSituation,
+            }),
+          });
 
           if (!response.ok) {
-            throw new Error(
-              "추천 요청에 실패했습니다.",
-            );
+            throw new Error("추천 요청에 실패했습니다.");
           }
 
-          const result =
-            await response.json();
+          const result = await response.json();
 
+          currentRecommendation = result;
           hideLoading();
           setLoadingState(false);
 
@@ -413,79 +417,62 @@
 
           // 추천 판정 완료
           recommendationCompleted = true;
+          postRecommendationMode = false;
 
           // 바로 종료하지 않고 사용자에게 확인
           showPostRecommendationQuestion();
-        }
-
-        catch (error) {
+        } catch (error) {
           hideLoading();
           setLoadingState(false);
 
           console.error(error);
 
-          addMessage(
-            "추천 처리 중 오류가 발생했습니다.",
-            "ai",
-          );
+          addMessage("추천 처리 중 오류가 발생했습니다.", "ai");
         }
       }
 
-
       function renderRecommendation(result) {
-        const chat =
-          document.getElementById("chat");
+        const chat = document.getElementById("chat");
 
-        const div =
-          document.createElement("div");
+        const div = document.createElement("div");
 
-        div.className =
-          "message ai recommendation";
+        div.className = "message ai recommendation";
 
-        const servicesHtml =
-          result.matched_services.length
-            ? result.matched_services
-                .map(
-                  (service) =>
-                    `<li>${service.name}</li>`,
-                )
-                .join("")
-            : `
+        const servicesHtml = result.matched_services.length
+          ? result.matched_services
+              .map((service) => `<li>${service.name}</li>`)
+              .join("")
+          : `
                 <li>
                   조건에 맞는 서비스를
                   아직 특정하지 못했습니다.
                 </li>
               `;
 
-        const sourcesHtml =
-          result.source_ids.length
-            ? `
+        const sourcesHtml = result.source_ids.length
+          ? `
                 <p class="sources">
                   출처:
                   ${result.source_ids.join(", ")}
                 </p>
               `
-            : "";
+          : "";
 
-        const reviewNote =
-          result.institution_review_required
-            ? `
+        const reviewNote = result.institution_review_required
+          ? `
                 <p class="review-note">
                   ※ 최종 대상 여부는
                   행정복지센터의 선정조사를
                   통해 확정됩니다.
                 </p>
               `
-            : "";
+          : "";
 
         div.innerHTML = `
           <p>
             <strong>
               판정 결과:
-              ${
-                STATUS_LABELS[result.status]
-                || result.status
-              }
+              ${STATUS_LABELS[result.status] || result.status}
             </strong>
           </p>
 
@@ -502,17 +489,13 @@
 
         chat.appendChild(div);
 
-        chat.scrollTop =
-          chat.scrollHeight;
+        chat.scrollTop = chat.scrollHeight;
       }
 
-
       function showPostRecommendationQuestion() {
-        const chat =
-          document.getElementById("chat");
+        const chat = document.getElementById("chat");
 
-        const div =
-          document.createElement("div");
+        const div = document.createElement("div");
 
         div.className = "message ai";
 
@@ -523,22 +506,13 @@
           </p>
 
           <div class="post-actions">
-
-            <button
-              class="continue-button"
-              onclick="continueAfterRecommendation()"
-            >
-              추가 상담하기
-            </button>
-
-            <button
-              class="finish-button"
-              onclick="finishConsultation()"
-            >
-              상담 종료
-            </button>
-
-          </div>
+  <button
+    class="continue-button"
+    onclick="continueAfterRecommendation()"
+  >
+    추가 상담하기
+  </button>
+</div>
         `;
 
         chat.appendChild(div);
@@ -546,36 +520,38 @@
         // 사용자가 선택할 때까지 입력 잠금
         setInputEnabled(false);
 
-        chat.scrollTop =
-          chat.scrollHeight;
+        chat.scrollTop = chat.scrollHeight;
       }
-
 
       function continueAfterRecommendation() {
         recommendationCompleted = false;
-        consultationFinished = false;
+        postRecommendationMode = true;
 
-        /*
-          현재 구조에서는 판정 이후 입력을
-          /consultation/continue로 다시 보내면
-          ready_for_recommendation이 다시 발생할 수 있다.
+        // 기존 상담 정보는 절대 초기화하지 않는다.
+        // currentSituation 유지
+        // currentUnknownFields 유지
+        // currentRecommendation 유지
+        // conversationHistory 유지
 
-          따라서 추가 상담은 새로운 상담 건으로 시작한다.
-        */
-
-        currentSituation = null;
-        currentUnknownFields = [];
+        // 추가 상담 버튼 중복 클릭 방지
+        document.querySelectorAll(".continue-button").forEach((button) => {
+          button.disabled = true;
+        });
 
         addMessage(
-          "네. 추가로 궁금하거나 도움이 필요한 상황을 편하게 말씀해주세요.",
+          "네. 지금까지의 상담 내용을 유지하고 있어요. 추가로 궁금한 점을 말씀해주세요.",
           "ai",
         );
 
         setInputEnabled(true);
       }
 
-
       function finishConsultation() {
+        // 이미 종료된 상담이면 아무것도 하지 않음
+        if (consultationFinished) {
+          return;
+        }
+
         consultationFinished = true;
         recommendationCompleted = true;
 
@@ -584,46 +560,44 @@
           "ai",
         );
 
-        const input =
-          document.getElementById("messageInput");
+        const input = document.getElementById("messageInput");
+        const sendButton = document.getElementById("sendButton");
+        const finishButton = document.getElementById("finishButton");
 
         input.value = "";
-        input.placeholder =
-          "상담이 종료되었습니다.";
+        input.placeholder = "상담이 종료되었습니다.";
 
-        setInputEnabled(false);
+        input.disabled = true;
+        sendButton.disabled = true;
+        finishButton.disabled = true;
       }
 
-
       function addMessage(text, type) {
-        const chat =
-          document.getElementById("chat");
+        const chat = document.getElementById("chat");
 
-        const div =
-          document.createElement("div");
+        const div = document.createElement("div");
 
-        div.className =
-          `message ${type}`;
+        div.className = `message ${type}`;
 
         div.textContent = text;
 
         chat.appendChild(div);
 
-        chat.scrollTop =
-          chat.scrollHeight;
-      }
+        chat.scrollTop = chat.scrollHeight;
 
+        conversationHistory.push({
+          role: type === "user" ? "user" : "assistant",
+          content: text,
+        });
+      }
 
       document
         .getElementById("messageInput")
-        .addEventListener(
-          "keydown",
-          function (event) {
-            if (event.key === "Enter") {
-              sendMessage();
-            }
-          },
-        );
+        .addEventListener("keydown", function (event) {
+          if (event.key === "Enter") {
+            sendMessage();
+          }
+        });
     </script>
   </body>
 </html>
